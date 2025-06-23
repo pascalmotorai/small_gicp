@@ -27,4 +27,31 @@ struct DistanceRejector {
   double max_dist_sq;  ///< Maximum squared distance between corresponding points
 };
 
+
+struct LabelDistanceRejector
+{
+    double max_dist_sq;
+
+    LabelDistanceRejector() : max_dist_sq(0.7 * 0.7) {} // Default threshold: 0.7m
+    LabelDistanceRejector(double max_dist) : max_dist_sq(max_dist * max_dist) {}
+
+    template <typename TargetPointCloud, typename SourcePointCloud>
+    bool operator()(const TargetPointCloud &target, const SourcePointCloud &source,
+                    const Eigen::Isometry3d &T, size_t target_index,
+                    size_t source_index, double sq_dist) const
+    {
+        if (target.points[target_index].z() != source.points[source_index].z())
+        {
+            return true; // reject label mismatch
+        }
+
+        if (sq_dist > max_dist_sq)
+        {
+            return true; // reject if distance exceeds max_dist_sq
+        }
+
+        return false; // accept otherwise
+    }
+};
+
 }  // namespace small_gicp

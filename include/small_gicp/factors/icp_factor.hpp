@@ -68,4 +68,37 @@ struct ICPFactor {
   size_t target_index;
   size_t source_index;
 };
+
+
+struct LabelICPFactor : public ICPFactor {
+  using Base = ICPFactor;
+  struct Setting : public Base::Setting {
+    double label_weight = 2.0;
+  };
+
+  LabelICPFactor(const Setting& setting = Setting())
+    : Base(setting), label_weight(setting.label_weight) {}
+
+  template <typename Target, typename Source, typename Tree, typename Rejector>
+  bool linearize(const Target& target, const Source& source,
+                 const Tree& tree, const Eigen::Isometry3d& T,
+                 size_t src_index, const Rejector& rejector,
+                 Eigen::Matrix<double,6,6>* H,
+                 Eigen::Matrix<double,6,1>* b, double* e) {
+    if(!Base::linearize(target, source, tree, T, src_index, rejector, H, b, e)) {
+      return false;
+    }
+
+    double diff = traits::label(target, Base::target_index)
+                - traits::label(source, src_index);
+    (*e) += 0.5 * label_weight * diff * diff;
+    (*b)(5) += label_weight * diff;
+    (*H)(5,5) += label_weight;
+
+    return true;
+  }
+
+  double label_weight;
+};
+
 }  // namespace small_gicp

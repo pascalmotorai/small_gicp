@@ -35,6 +35,12 @@ bool has_covs(const T& points) {
   return Traits<T>::has_covs(points);
 }
 
+/// @brief Check if the point cloud has labels.
+template <typename T>
+bool has_labels(const T& points) {
+  return Traits<T>::has_labels(points);
+}
+
 /// @brief Get i-th point. 4D vector is used to take advantage of SIMD intrinsics. The last element must be filled by one (x, y, z, 1).
 template <typename T>
 auto point(const T& points, size_t i) {
@@ -51,6 +57,12 @@ auto normal(const T& points, size_t i) {
 template <typename T>
 auto cov(const T& points, size_t i) {
   return Traits<T>::cov(points, i);
+}
+
+/// @brief Get i-th label.
+template <typename T>
+auto label(const T& points, size_t i) {
+  return Traits<T>::label(points, i);
 }
 
 /// @brief Resize the point cloud (this function should resize all attributes)
@@ -75,6 +87,11 @@ void set_normal(T& points, size_t i, const Eigen::Vector4d& pt) {
 template <typename T>
 void set_cov(T& points, size_t i, const Eigen::Matrix4d& cov) {
   Traits<T>::set_cov(points, i, cov);
+}
+/// @brief Set i-th label.
+template <typename T>
+void set_label(T& points, size_t i, int label) {
+  Traits<T>::set_label(points, i, label);
 }
 
 }  // namespace traits
