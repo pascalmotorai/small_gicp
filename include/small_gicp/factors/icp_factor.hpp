@@ -73,7 +73,9 @@ struct ICPFactor {
 struct LabelICPFactor : public ICPFactor {
   using Base = ICPFactor;
   struct Setting : public Base::Setting {
-    double label_weight = 2.0;
+    Setting() : label_weight(2.0) {}
+
+    double label_weight;
   };
 
   LabelICPFactor(const Setting& setting = Setting())
