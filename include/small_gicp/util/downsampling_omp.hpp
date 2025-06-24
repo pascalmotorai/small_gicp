@@ -5,6 +5,7 @@
 #include <atomic>
 #include <memory>
 #include <iostream>
+#include <unordered_map>
 
 #include <small_gicp/points/traits.hpp>
 #include <small_gicp/util/fast_floor.hpp>
@@ -65,11 +66,20 @@ std::shared_ptr<OutputPointCloud> voxelgrid_sampling_omp(const InputPointCloud& 
 #pragma omp parallel for num_threads(num_threads) schedule(guided, 4)
   for (std::int64_t block_begin = 0; block_begin < traits::size(points); block_begin += block_size) {
     std::vector<Eigen::Vector4d> sub_points;
+    std::vector<int> sub_labels;
     sub_points.reserve(block_size);
 
     const size_t block_end = std::min<size_t>(traits::size(points), block_begin + block_size);
 
     Eigen::Vector4d sum_pt = traits::point(points, coord_pt[block_begin].second);
+    int majority_label = 0;
+    std::unordered_map<int, size_t> label_count;
+    size_t max_label_count = 0;
+    if constexpr (traits::has_label<InputPointCloud>::value && traits::has_label<OutputPointCloud>::value) {
+      majority_label = traits::label(points, coord_pt[block_begin].second);
+      label_count[majority_label] = 1;
+      max_label_count = 1;
+    }
     for (size_t i = block_begin + 1; i != block_end; i++) {
       if (coord_pt[i].first == invalid_coord) {
         continue;
@@ -77,15 +87,34 @@ std::shared_ptr<OutputPointCloud> voxelgrid_sampling_omp(const InputPointCloud& 
 
       if (coord_pt[i - 1].first != coord_pt[i].first) {
         sub_points.emplace_back(sum_pt / sum_pt.w());
+        if constexpr (traits::has_label<InputPointCloud>::value && traits::has_label<OutputPointCloud>::value) {
+          sub_labels.emplace_back(majority_label);
+          label_count.clear();
+          max_label_count = 0;
+        }
         sum_pt.setZero();
       }
       sum_pt += traits::point(points, coord_pt[i].second);
+      if constexpr (traits::has_label<InputPointCloud>::value && traits::has_label<OutputPointCloud>::value) {
+        int lbl = traits::label(points, coord_pt[i].second);
+        size_t c = ++label_count[lbl];
+        if (c > max_label_count) {
+          max_label_count = c;
+          majority_label = lbl;
+        }
+      }
     }
     sub_points.emplace_back(sum_pt / sum_pt.w());
+    if constexpr (traits::has_label<InputPointCloud>::value && traits::has_label<OutputPointCloud>::value) {
+      sub_labels.emplace_back(majority_label);
+    }
 
     const size_t point_index_begin = num_points.fetch_add(sub_points.size());
     for (size_t i = 0; i < sub_points.size(); i++) {
       traits::set_point(*downsampled, point_index_begin + i, sub_points[i]);
+      if constexpr (traits::has_label<InputPointCloud>::value && traits::has_label<OutputPointCloud>::value) {
+        traits::set_label(*downsampled, point_index_begin + i, sub_labels[i]);
+      }
     }
   }
 
