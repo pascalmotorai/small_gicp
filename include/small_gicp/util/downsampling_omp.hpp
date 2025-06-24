@@ -75,7 +75,7 @@ std::shared_ptr<OutputPointCloud> voxelgrid_sampling_omp(const InputPointCloud& 
     int majority_label = 0;
     std::unordered_map<int, size_t> label_count;
     size_t max_label_count = 0;
-    if constexpr (traits::has_label<InputPointCloud>::value && traits::has_label<OutputPointCloud>::value) {
+    if (small_gicp::traits::has_labels(points) && small_gicp::traits::has_labels(points)) {
       majority_label = traits::label(points, coord_pt[block_begin].second);
       label_count[majority_label] = 1;
       max_label_count = 1;
@@ -87,7 +87,7 @@ std::shared_ptr<OutputPointCloud> voxelgrid_sampling_omp(const InputPointCloud& 
 
       if (coord_pt[i - 1].first != coord_pt[i].first) {
         sub_points.emplace_back(sum_pt / sum_pt.w());
-        if constexpr (traits::has_label<InputPointCloud>::value && traits::has_label<OutputPointCloud>::value) {
+        if (small_gicp::traits::has_labels(points) && small_gicp::traits::has_labels(points)) {
           sub_labels.emplace_back(majority_label);
           label_count.clear();
           max_label_count = 0;
@@ -95,7 +95,7 @@ std::shared_ptr<OutputPointCloud> voxelgrid_sampling_omp(const InputPointCloud& 
         sum_pt.setZero();
       }
       sum_pt += traits::point(points, coord_pt[i].second);
-      if constexpr (traits::has_label<InputPointCloud>::value && traits::has_label<OutputPointCloud>::value) {
+      if (small_gicp::traits::has_labels(points) && small_gicp::traits::has_labels(points)) {
         int lbl = traits::label(points, coord_pt[i].second);
         size_t c = ++label_count[lbl];
         if (c > max_label_count) {
@@ -105,14 +105,14 @@ std::shared_ptr<OutputPointCloud> voxelgrid_sampling_omp(const InputPointCloud& 
       }
     }
     sub_points.emplace_back(sum_pt / sum_pt.w());
-    if constexpr (traits::has_label<InputPointCloud>::value && traits::has_label<OutputPointCloud>::value) {
+    if (small_gicp::traits::has_labels(points) && small_gicp::traits::has_labels(points)) {
       sub_labels.emplace_back(majority_label);
     }
 
     const size_t point_index_begin = num_points.fetch_add(sub_points.size());
     for (size_t i = 0; i < sub_points.size(); i++) {
       traits::set_point(*downsampled, point_index_begin + i, sub_points[i]);
-      if constexpr (traits::has_label<InputPointCloud>::value && traits::has_label<OutputPointCloud>::value) {
+      if (small_gicp::traits::has_labels(points) && small_gicp::traits::has_labels(points)) {
         traits::set_label(*downsampled, point_index_begin + i, sub_labels[i]);
       }
     }

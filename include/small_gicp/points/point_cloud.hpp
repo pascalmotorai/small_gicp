@@ -82,15 +82,18 @@ struct Traits<PointCloud> {
   static bool has_points(const Points& points) { return !points.points.empty(); }
   static bool has_normals(const Points& points) { return !points.normals.empty(); }
   static bool has_covs(const Points& points) { return !points.covs.empty(); }
+  static bool has_labels(const PointCloud&) { return false; }
 
   static const Eigen::Vector4d& point(const Points& points, size_t i) { return points.point(i); }
   static const Eigen::Vector4d& normal(const Points& points, size_t i) { return points.normal(i); }
   static const Eigen::Matrix4d& cov(const Points& points, size_t i) { return points.cov(i); }
+  static const int label(const PointCloud&, size_t) { return 0; }
 
   static void resize(Points& points, size_t n) { points.resize(n); }
   static void set_point(Points& points, size_t i, const Eigen::Vector4d& pt) { points.point(i) = pt; }
   static void set_normal(Points& points, size_t i, const Eigen::Vector4d& n) { points.normal(i) = n; }
   static void set_cov(Points& points, size_t i, const Eigen::Matrix4d& cov) { points.cov(i) = cov; }
+  static void set_label(PointCloud&, size_t, int) { /* no-op */ }
 };
 
 }  // namespace traits
