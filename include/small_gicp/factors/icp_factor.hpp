@@ -69,7 +69,6 @@ struct ICPFactor {
   size_t source_index;
 };
 
-
 struct LabelICPFactor : public ICPFactor {
   using Base = ICPFactor;
   struct Setting : public Base::Setting {
@@ -78,29 +77,78 @@ struct LabelICPFactor : public ICPFactor {
     double label_weight;
   };
 
-  LabelICPFactor(const Setting& setting = Setting())
-    : Base(setting), label_weight(setting.label_weight) {}
+  LabelICPFactor(const Setting& setting = Setting()) : Base(setting), label_weight(setting.label_weight) {}
 
   template <typename Target, typename Source, typename Tree, typename Rejector>
-  bool linearize(const Target& target, const Source& source,
-                 const Tree& tree, const Eigen::Isometry3d& T,
-                 size_t src_index, const Rejector& rejector,
-                 Eigen::Matrix<double,6,6>* H,
-                 Eigen::Matrix<double,6,1>* b, double* e) {
-    if(!Base::linearize(target, source, tree, T, src_index, rejector, H, b, e)) {
+  bool linearize(
+    const Target& target,
+    const Source& source,
+    const Tree& tree,
+    const Eigen::Isometry3d& T,
+    size_t src_index,
+    const Rejector& rejector,
+    Eigen::Matrix<double, 6, 6>* H,
+    Eigen::Matrix<double, 6, 1>* b,
+    double* e) {
+    if (!Base::linearize(target, source, tree, T, src_index, rejector, H, b, e)) {
       return false;
     }
 
-    double diff = traits::label(target, Base::target_index)
-                - traits::label(source, src_index);
+     // discretize: 0 if same label, 1 if different
+    bool match = (traits::label(target, Base::target_index)
+                  == traits::label(source, src_index));
+    double diff = match ? 0.0 : 1.0;
+    
     (*e) += 0.5 * label_weight * diff * diff;
     (*b)(5) += label_weight * diff;
-    (*H)(5,5) += label_weight;
+    (*H)(5, 5) += label_weight;
 
     return true;
   }
 
   double label_weight;
+};
+
+struct LabelICPFullFactor : public ICPFactor {
+  using Base = ICPFactor;
+  struct Setting : public Base::Setting {
+    Setting() : label_weight(2.0), label_jacobian(Eigen::Matrix<double, 6, 1>::Ones()) {}
+
+    double label_weight;
+    Eigen::Matrix<double, 6, 1> label_jacobian;
+  };
+
+  LabelICPFullFactor(const Setting& setting = Setting()) : Base(setting), label_weight(setting.label_weight), label_jacobian(setting.label_jacobian) {}
+
+  template <typename Target, typename Source, typename Tree, typename Rejector>
+  bool linearize(
+    const Target& target,
+    const Source& source,
+    const Tree& tree,
+    const Eigen::Isometry3d& T,
+    size_t src_index,
+    const Rejector& rejector,
+    Eigen::Matrix<double, 6, 6>* H,
+    Eigen::Matrix<double, 6, 1>* b,
+    double* e) {
+    if (!Base::linearize(target, source, tree, T, src_index, rejector, H, b, e)) {
+      return false;
+    }
+
+     // discretize: 0 if same label, 1 if different
+    bool match = (traits::label(target, Base::target_index)
+                  == traits::label(source, src_index));
+    double diff = match ? 0.0 : 1.0;
+
+    (*e) += 0.5 * label_weight * diff * diff;
+    *H += label_weight * (label_jacobian * label_jacobian.transpose());
+    *b += label_weight * label_jacobian * diff;
+
+    return true;
+  }
+
+  double label_weight;
+  Eigen::Matrix<double, 6, 1> label_jacobian;
 };
 
 }  // namespace small_gicp
