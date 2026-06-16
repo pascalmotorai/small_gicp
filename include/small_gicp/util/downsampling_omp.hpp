@@ -7,12 +7,29 @@
 #include <iostream>
 #include <unordered_map>
 
+#include <Eigen/Eigenvalues>  // SelfAdjointEigenSolver
+
 #include <small_gicp/points/traits.hpp>
 #include <small_gicp/util/fast_floor.hpp>
 #include <small_gicp/util/vector3i_hash.hpp>
 #include <small_gicp/util/sort_omp.hpp>
 
 namespace small_gicp {
+
+/// @brief Dominant ("major") normal direction of a voxel.
+/// @param M    Accumulated normal scatter matrix M = sum(n_i n_i^T) over the voxel.
+/// @param ref  Sign reference (e.g. the voxel's first normal). The principal
+///             eigenvector is sign-aligned to this so the orientation is stable
+///             across voxels (eigenvector sign is otherwise arbitrary).
+/// @return     Major normal as (nx, ny, nz, 0).
+inline Eigen::Vector4d major_normal(const Eigen::Matrix3d& M, const Eigen::Vector3d& ref) {
+  Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> es(M);     // eigenvalues ascending
+  Eigen::Vector3d n = es.eigenvectors().col(2).normalized();  // largest eigenvalue
+  if (n.dot(ref) < 0.0) {
+    n = -n;
+  }
+  return Eigen::Vector4d(n.x(), n.y(), n.z(), 0.0);
+}
 
 /// @brief Voxel grid downsampling with OpenMP backend.
 /// @note  This function has minor run-by-run non-deterministic behavior due to parallel data collection that results
@@ -70,6 +87,9 @@ std::shared_ptr<OutputPointCloud> voxelgrid_sampling_omp(const InputPointCloud& 
     // input points belonging to that voxel. These majority labels are written
     // back to the output cloud together with the averaged point positions.
     std::vector<int> sub_labels;
+    // Major (dominant) normal per finished voxel, written back alongside the
+    // averaged positions when the input cloud carries normals.
+    std::vector<Eigen::Vector4d> sub_normals;
     sub_points.reserve(block_size);
 
     const size_t block_end = std::min<size_t>(traits::size(points), block_begin + block_size);
@@ -87,6 +107,20 @@ std::shared_ptr<OutputPointCloud> voxelgrid_sampling_omp(const InputPointCloud& 
       label_count[majority_label] = 1;
       max_label_count = 1;
     }
+
+    // Normal scatter matrix M = sum(n_i n_i^T) for the current voxel; the major
+    // normal is its principal eigenvector. `ref_normal` (the voxel's first
+    // normal) disambiguates the eigenvector sign. Hoist the trait query out of
+    // the hot loop.
+    const bool has_normals = small_gicp::traits::has_normals(points);
+    Eigen::Matrix3d normal_M = Eigen::Matrix3d::Zero();
+    Eigen::Vector3d ref_normal = Eigen::Vector3d::Zero();
+    if (has_normals) {
+      const Eigen::Vector4d n0_4 = traits::normal(points, coord_pt[block_begin].second);
+      const Eigen::Vector3d n0 = n0_4.head<3>();
+      normal_M = n0 * n0.transpose();
+      ref_normal = n0;
+    }
     for (size_t i = block_begin + 1; i != block_end; i++) {
       if (coord_pt[i].first == invalid_coord) {
         continue;
@@ -101,6 +135,11 @@ std::shared_ptr<OutputPointCloud> voxelgrid_sampling_omp(const InputPointCloud& 
           label_count.clear();
           max_label_count = 0;
         }
+        if (has_normals) {
+          sub_normals.emplace_back(major_normal(normal_M, ref_normal));
+          normal_M.setZero();
+          ref_normal.setZero();  // re-seeded below from the first normal of the new voxel
+        }
         sum_pt.setZero();
       }
       sum_pt += traits::point(points, coord_pt[i].second);
@@ -112,11 +151,23 @@ std::shared_ptr<OutputPointCloud> voxelgrid_sampling_omp(const InputPointCloud& 
           majority_label = lbl;
         }
       }
+      if (has_normals) {
+        const Eigen::Vector4d ni_4 = traits::normal(points, coord_pt[i].second);
+        const Eigen::Vector3d ni = ni_4.head<3>();
+        if (ref_normal.isZero()) {
+          ref_normal = ni;  // first normal of a freshly-reset voxel
+        }
+        normal_M += ni * ni.transpose();
+      }
     }
     sub_points.emplace_back(sum_pt / sum_pt.w());
     if (small_gicp::traits::has_labels(points)) {
       // Append the majority label of the last voxel to the temporary list.
       sub_labels.emplace_back(majority_label);
+    }
+    if (has_normals) {
+      // Append the major normal of the last voxel to the temporary list.
+      sub_normals.emplace_back(major_normal(normal_M, ref_normal));
     }
 
     const size_t point_index_begin = num_points.fetch_add(sub_points.size());
@@ -124,6 +175,9 @@ std::shared_ptr<OutputPointCloud> voxelgrid_sampling_omp(const InputPointCloud& 
       traits::set_point(*downsampled, point_index_begin + i, sub_points[i]);
       if (small_gicp::traits::has_labels(points)) {
         traits::set_label(*downsampled, point_index_begin + i, sub_labels[i]);
+      }
+      if (has_normals) {
+        traits::set_normal(*downsampled, point_index_begin + i, sub_normals[i]);
       }
     }
   }
